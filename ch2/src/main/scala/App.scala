@@ -35,6 +35,7 @@ object App extends ZIOAppDefault {
       }
   }
 
+  val makeServer = zhttp.service.Server.make(app, )
   def run =
     zhttp.service.Server.start(8080, app)
 }
