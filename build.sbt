@@ -6,7 +6,6 @@ val zioVersion = "2.0.0"
 val sttpVersion = "3.7.4"
 val sttpClientVersion = "3.7.4"
 
-
 lazy val sharedSettings = Seq(
   libraryDependencies ++= Seq(
     "dev.zio" %% "zio" % zioVersion,
@@ -16,8 +15,9 @@ lazy val sharedSettings = Seq(
     "com.softwaremill.sttp.client3" %% "core" % sttpClientVersion,
     "com.softwaremill.sttp.client3" %% "zio" % sttpVersion,
     "com.softwaremill.sttp.client3" %% "slf4j-backend" % sttpVersion,
-    "dev.zio" %% "zio-json" % "0.3.0-RC10",
-  ),
+    "com.softwaremill.sttp.client3" %% "zio-json" % sttpVersion,
+    "dev.zio" %% "zio-json" % "0.3.0-RC10"
+  )
 )
 
 lazy val root = (project in file("."))
