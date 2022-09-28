@@ -1,9 +1,10 @@
 import sttp.client3.httpclient.zio._
 import sttp.client3.ziojson._
-import sttp.client3.{SttpBackend, UriContext, basicRequest}
+import sttp.client3.{SttpBackend, UriContext, asStringAlways, basicRequest}
 import zhttp.service.server.ServerChannelFactory
 import zhttp.service.{EventLoopGroup, Server, ServerChannelFactory}
 import zio._
+import zio.test.Assertion.equalTo
 import zio.test._
 
 // 서버를 테스트해보세요
@@ -12,8 +13,16 @@ import zio.test._
 // https://sttp.softwaremill.com/en/latest/backends/zio.html
 
 class TestAppDriver(port: Int, backend: SttpBackend[Task, Any]) {
-  def getById: Task[Todo] =
-    basicRequest.get(uri"http://localhost:$port/todo/1")
+  def hello: Task[String] = {
+    for {
+      res <- basicRequest.get(uri"http://localhost:$port/hello")
+        .response(asStringAlways)
+        .send(backend)
+    } yield res.body
+  }
+
+  def getById(id: Long): Task[Todo] =
+    basicRequest.get(uri"http://localhost:$port/todo/$id")
       .response(asJsonAlways[Todo])
       .send(backend)
       .map(_.body)
@@ -21,7 +30,8 @@ class TestAppDriver(port: Int, backend: SttpBackend[Task, Any]) {
       .mapError(_.merge)
 
   def getList: Task[List[Todo]] =
-    basicRequest.get(uri"http://localhost:$port/todo/list")
+    basicRequest
+      .get(uri"http://localhost:$port/todo/list")
       .response(asJsonAlways[List[Todo]])
       .send(backend)
       .map(_.body)
@@ -29,7 +39,8 @@ class TestAppDriver(port: Int, backend: SttpBackend[Task, Any]) {
       .mapError(_.merge)
 
   def create(form: CreateForm): Task[Todo] =
-    basicRequest.post(uri"http://localhost:$port/todo")
+    basicRequest
+      .post(uri"http://localhost:$port/todo")
       .body(form)
       .response(asJsonAlways[Todo])
       .send(backend)
@@ -39,29 +50,31 @@ class TestAppDriver(port: Int, backend: SttpBackend[Task, Any]) {
 }
 
 object TestAppDriver {
-  val layer: ZLayer[EventLoopGroup & ServerChannelFactory, Throwable, TestAppDriver] =
+  def hello = ZIO.serviceWithZIO[TestAppDriver](_.hello)
+  def getById(id: Long) = ZIO.serviceWithZIO[TestAppDriver](_.getById(id))
+  def getList = ZIO.serviceWithZIO[TestAppDriver](_.getList)
+  def create(title: String) = ZIO.serviceWithZIO[TestAppDriver](_.create(CreateForm(title)))
+
+  val layer: ZLayer[Server.Start, Throwable, TestAppDriver] =
     ZLayer.scoped {
-      (
-        for {
-          backend <- ZIO.service[SttpBackend[Task, Any]]
-          server <- Server
-            .app(TodoApp.route)
-            .withPort(0)
-            .make
-        } yield new TestAppDriver(server.port, backend)
-        ).provideSome(
-        HttpClientZioBackend.layer(),
-        TodoRepositoryInMemory.layer
-      )
+      for {
+        start <- ZIO.service[Server.Start]
+        backend <- HttpClientZioBackend()
+      } yield new TestAppDriver(start.port, backend)
     }
 }
 
-object AppSpec extends ZIOSpecDefault {
+object AppSpec extends ZIOSpec[EventLoopGroup & ServerChannelFactory] {
+
+  override def bootstrap
+      : ZLayer[Scope, Any, EventLoopGroup & ServerChannelFactory] =
+    EventLoopGroup.auto(1) ++ ServerChannelFactory.auto
 
   override def spec = suite("App")(
-    test("request test") {
-      assertTrue(true)
+    test("hello") {
+      assertZIO(TestAppDriver.hello)(equalTo("hello"))
     },
+
     test("todo list") {
       val expectedList = List(
         Todo(1, "a"),
@@ -70,26 +83,32 @@ object AppSpec extends ZIOSpecDefault {
         Todo(4, "d")
       )
 
-      for {
-        response <- ZIO.serviceWithZIO[TestAppDriver](_.getList)
-      } yield assertTrue(response == expectedList)
+      assertZIO(TestAppDriver.getList)(equalTo(expectedList))
     },
     test("todo by id") {
       val expected = Todo(1, "a")
-      for {
-        response <- ZIO.serviceWithZIO[TestAppDriver](_.getById)
-      } yield assertTrue(response == expected)
+      assertZIO(TestAppDriver.getById(expected.id))(equalTo(expected))
     },
     test("create todo") {
       val form = CreateForm("test - title")
       for {
-        response <- ZIO.serviceWithZIO[TestAppDriver](app => app.create(form))
-      } yield assertTrue(response.title == form.title)
+        oldList <- TestAppDriver.getList
+        _ <- assertTrue(!oldList.exists(_.title == form.title))
+        newItem <- TestAppDriver.create(form.title)
+        newList <- TestAppDriver.getList
+      } yield assertTrue(newList.contains(newItem))
     }
-  ).provideSome[EventLoopGroup & ServerChannelFactory](
-    TestAppDriver.layer
-  ).provideShared(
-    EventLoopGroup.auto(1),
-    ServerChannelFactory.auto,
+  ).provideSome[Scope with Environment](
+    TestAppDriver.layer,
+    TodoRepositoryInMemory.layer,
+    TodoApp.layer,
+    HelloApp.layer,
+    ZLayer {
+      for {
+        todoApp <- ZIO.service[TodoApp]
+        helloApp <- ZIO.service[HelloApp]
+        start <- Server.app(todoApp.route ++ helloApp.route).withPort(0).make
+      } yield start
+    }
   )
 }

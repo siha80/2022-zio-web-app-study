@@ -3,16 +3,16 @@ import zio._
 import zhttp.http._
 import zio.json._
 
-object TodoApp {
+case class TodoApp(todoRepository: TodoRepository) {
   def route =
     Http.collectZIO[Request] {
       case Method.GET -> !! / "todo" / "list" =>
-        TodoRepo.getAll.map(list => Response.json(list.toJson))
+        todoRepository.getAll.map(list => Response.json(list.toJson))
       case Method.GET -> !! / "todo" / id =>
         id.toLongOption match {
           case Some(id) =>
             for {
-              item <- TodoRepo.findById(id)
+              item <- todoRepository.findById(id)
             } yield {
               item match {
                 case Some(i) => Response.json(i.toJson)
@@ -28,9 +28,13 @@ object TodoApp {
             case Left(e) =>
               ZIO.succeed(Response.text(e).setStatus(Status.BadRequest))
             case Right(f) =>
-              TodoRepo.create(f).map(todo => Response.json(todo.toJson))
+              todoRepository.create(f).map(todo => Response.json(todo.toJson))
           }
         } yield r
     }
+}
+
+object TodoApp {
+  val layer = ZLayer.fromFunction(TodoApp.apply _)
 }
 

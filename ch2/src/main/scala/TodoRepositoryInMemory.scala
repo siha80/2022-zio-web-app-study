@@ -1,6 +1,6 @@
 import zio.{Ref, Task, ZLayer}
 
-class TodoRepositoryInMemory(todoList: Ref[List[Todo]]) extends TodoRepo {
+class TodoRepositoryInMemory(todoList: Ref[List[Todo]]) extends TodoRepository {
   def getAll: Task[List[Todo]] = todoList.get
 
   def findById(id: Long): Task[Option[Todo]] =
