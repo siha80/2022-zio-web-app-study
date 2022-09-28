@@ -1,12 +1,13 @@
 import zhttp.http._
-import zhttp.service.{EventLoopGroup, Server, ServerChannelFactory}
+import zhttp.service.Server
 import zio._
 
 object MainApp extends ZIOAppDefault {
 
   val serverLayer: ZLayer[Any, Throwable, Http[TodoRepo, Throwable, Request, Response]] =
     ZLayer {
-      ZIO.attempt(TodoApp.route)
+      ZIO.succeed(TodoApp.route)
+//      ZIO.attempt(TodoApp.route)
     }
 
   def run: ZIO[Any with Scope, Any, Any] = (
